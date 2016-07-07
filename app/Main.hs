@@ -47,7 +47,7 @@ repl valenv tyenv =
      mret <- runExceptT $ do
        tokens <- ExceptT $ return $ scanTokens s
        cmd    <- ExceptT $ return $ parseCmd tokens
-       ret    <- ExceptT $ evalTc valenv tyenv $ evalCommand cmd
+       ret    <- ExceptT $ runTc valenv tyenv $ evalCommand cmd
        return ret
      case mret of
        Right ret@(Just x,ty,v) -> do

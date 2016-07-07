@@ -4,7 +4,7 @@ module TypeCheck.TcMonad (
   Tc(..),
   -- Environment manipulation
   getValEnv, getTyEnv,
-  runTc, evalTc, lift, liftEither, check,
+  runTc, lift, liftEither, check,
   extendTyEnv, extendTyEnvList, lookupVar,
   extendValEnv, extendValEnvList,
   localValEnv,
@@ -74,9 +74,6 @@ runTc valenv tyenv (Tc tc) = do
                     tyEnv = tyenv,
                     valEnv = valenv }
   tc env
-
-evalTc :: ValEnv -> TyEnv -> Tc a -> IO (Either Error a)
-evalTc = runTc
 
 newTcRef :: a -> Tc (IORef a)
 newTcRef v = lift (newIORef v)

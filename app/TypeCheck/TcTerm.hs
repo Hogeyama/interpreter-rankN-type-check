@@ -11,8 +11,8 @@ import Data.List( (\\) )
 --- The top-level wrapper ---
 --- --------------------- ---
 
-typecheck :: Expr -> Tc Sigma
-typecheck e = do
+inferExpr :: Expr -> Tc Sigma
+inferExpr e = do
   ty <- inferSigma e
   zonkType ty
 
