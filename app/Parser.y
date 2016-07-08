@@ -57,8 +57,9 @@ import Control.Exception.Base (throw, throwIO)
 TopLevel :: { Command }
 TopLevel
     : Expr ';;' { CExp $1 }
-    | let Var Args0 '=' Expr ';;' { CDecl $2 (mkFun $3 $5) }
-    | let Var ':' Sigma '=' Expr ';;' { CDecl $2 (EAnnot $6 $4) }
+    | let Var Args0 '=' Expr ';;'         { CDecl $2 (mkFun $3 $5) }
+    | let rec Var Var Args0 '=' Expr ';;' { CRecDecl $3 $4 (mkFun $5 $7) }
+    | let Var ':' Sigma '=' Expr ';;'     { CDecl $2 (EAnnot $6 $4) }
 
 Expr :: { Expr }
 Expr

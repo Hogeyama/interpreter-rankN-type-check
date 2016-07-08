@@ -4,6 +4,7 @@ module Eval where
 import Syntax
 import TypeCheck
 import qualified Data.Map as M
+import TypeCheck.TcMonad (lift)
 
 findMatch :: Pattern -> Value -> Maybe [(Name, Value)]
 findMatch (PInt n) (VInt n')
@@ -75,8 +76,8 @@ evalExpr e = case e of
       v1 <- evalExpr e1
       case v1 of
           VBool b ->
-              if b then evalExpr e1
-                   else evalExpr e2
+              if b then evalExpr e2
+                   else evalExpr e3
           _ -> fail $ "Type match error: (if)"
     ELet x e1 e2 -> do
       v <- evalExpr e1
@@ -94,11 +95,14 @@ evalExpr e = case e of
       v1 <- evalExpr e1
       v2 <- evalExpr e2
       case v1 of
-        VFun x e3 oenv ->
-          localValEnv oenv $ extendValEnv x v2 $ evalExpr e3
+        VFun x e' oenv ->
+          localValEnv oenv $ extendValEnv x v2 $ evalExpr e'
           --逆順になることに注意. extend ~ $ local ~ $ ~ だと x unbound
-        VRecFun f x e' oenv -> undefined
+        VRecFun f x e' oenv -> do
+          lift $ print oenv
+          localValEnv oenv $ extendValEnv f v1 $ extendValEnv x v2 $ evalExpr e'
         _ -> fail $ "Eval Error: EApp"
+
     EPair e1 e2 -> do
       v1 <- evalExpr e1
       v2 <- evalExpr e2
@@ -128,7 +132,7 @@ evalCommand (CDecl x e) = do
   v <- evalExpr e
   return (Just x, sigma, v)
 evalCommand (CRecDecl f x e) = do
-  undefined
+  evalCommand (CDecl f (ELetRec f x e (EVar f)))
 
 
 

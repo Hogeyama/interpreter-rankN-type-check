@@ -102,11 +102,23 @@ tcRho (EEq e1 e2) exp_ty = do
   tcRho e2 (Check ty)
   instSigma TyBool exp_ty
 
+--p55 (1)の方法
 tcRho (EIf e1 e2 e3) exp_ty = do --TODO
   tcRho e1 (Check TyBool)
   exp_ty' <- zapToMonoType exp_ty
   tcRho e2 exp_ty'
   tcRho e3 exp_ty'
+--p55 (2)の方法
+--tcRho (EIf e1 e2 e3) (Check exp_ty) = do
+--  tcRho e1 (Check TyBool)
+--  tcRho e2 (Check exp_ty)
+--  tcRho e3 (Check exp_ty)
+--tcRho (EIf e1 e2 e3) (Infer ref) = do
+--  tcRho e1 (Check TyBool)
+--  ty2 <- inferRho e2
+--  ty3 <- inferRho e3
+--  unify ty2 ty3
+--  writeTcRef ref ty2
 
 tcRho ENil (Check exp_ty) = do
   unifyList exp_ty
@@ -115,14 +127,14 @@ tcRho ENil (Infer ref) = do
   ty <- newTyVar
   writeTcRef ref (TyList ty)
 
--- note: TyList Sigma is Rho
 tcRho (ECons e1 e2) (Check exp_ty) = do
   ty <- unifyList exp_ty
-  checkSigma e1 ty
-  checkSigma e2 (TyList ty)
+  checkRho e1 ty
+  checkRho e2 (TyList ty)
 tcRho (ECons e1 e2) (Infer ref) = do
-  ty <- inferSigma e1
-  checkSigma e2 (TyList ty)
+  ty <- newTyVar
+  checkRho e1 ty
+  checkRho e2 (TyList ty)
   writeTcRef ref (TyList ty)
 
 tcRho (EPair e1 e2) (Check exp_ty) = do
@@ -138,18 +150,26 @@ tcRho (EPair e1 e2) (Infer ref) = do
 tcRho (EMatch e l) (Infer ref) = do
   fun_tys <- mapM inferPLamRho l
   (arg_tys, res_ty:res_tys)<- unzip <$> mapM unifyFun fun_tys
-  mapM (checkSigma e) arg_tys
+  mapM_ (checkSigma e) arg_tys
   ret <- instantiate res_ty -- instSigma (Infer)の代わり(こっちのが短いので)
-  mapM (`instSigma` (Check ret)) res_tys
+  mapM_ (`instSigma` Check ret) res_tys
   writeTcRef ref ret
 tcRho (EMatch e l) (Check exp_ty) = do
   fun_tys <- mapM inferPLamRho l
   (arg_tys, res_tys)<- unzip <$> mapM unifyFun fun_tys
-  mapM (checkSigma e) arg_tys
-  mapM (`instSigma` (Check exp_ty)) res_tys
+  mapM_ (checkSigma e) arg_tys
+  mapM_ (`instSigma` (Check exp_ty)) res_tys
   return ()
 
-tcRho (ELetRec {}) _ = error "Not Implemented"
+tcRho (ELetRec f x e1 e2) exp_ty = do
+  e1_ty <- inferRho $ EFun f (EFun x e1)
+  e1_ty <- unifyFix e1_ty -- a->aの制限をつけてからquantify
+  env_tys <- getEnvTypes
+  env_tvs <- getMetaTyVars env_tys
+  res_tvs <- getMetaTyVars [e1_ty]
+  let forall_tvs = res_tvs \\ env_tvs
+  e1_ty <- quantify forall_tvs e1_ty
+  extendTyEnv f e1_ty (tcRho e2 exp_ty)
 
 tcPLamRho :: (Pattern, Expr) -> Expected Rho -> Tc ()
 tcPLamRho (pat, body) (Infer ref) = do
@@ -191,11 +211,12 @@ tcPat (PBool _) exp_ty = do
   instSigma TyBool exp_ty
   return []
 
+tcPat (PVar v) (Check ty) =
+  return [(v, ty)]
 tcPat (PVar v) (Infer ref) = do
   ty <- newTyVar
-  writeTcRef ref ty --TODO あってるよね?
+  writeTcRef ref ty
   return [(v,ty)]
-tcPat (PVar v) (Check ty) = return [(v, ty)]
 
 tcPat (PPair p1 p2) exp_ty = do
   ty1 <- newTyVar
@@ -301,10 +322,6 @@ subsCheckRho (TyPair a1 b1) rho2 = do
   (a2, b2) <- unifyPair rho2
   subsCheckRho a1 a2
   subsCheckRho b1 b2
-
-subsCheckRho (TyList a) rho2 = do
-  b <- unifyList rho2
-  subsCheckRho a b
 
 -- Rule MONO
 subsCheckRho tau1 tau2 =

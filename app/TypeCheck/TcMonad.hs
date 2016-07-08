@@ -12,7 +12,7 @@ module TypeCheck.TcMonad (
   -- Types and unification
   newTyVar,
   instantiate, skolemise, zonkType, quantify,
-  unify, unifyFun, unifyList, unifyPair,
+  unify, unifyFun, unifyList, unifyPair, unifyFix,
   -- Ref cells
   newTcRef, readTcRef, writeTcRef
   ) where
@@ -22,7 +22,6 @@ import qualified Data.Map as M
 import Data.IORef
 import Data.List ((\\), foldl')
 import Control.Monad (ap)
-
 
 --- ---------------------- ---
 --- Monad & base functions ---
@@ -187,10 +186,10 @@ skolemise (Forall tvs ty) = do
 skolemise (Fun arg_ty res_ty) = do
   (sks, res_ty') <- skolemise res_ty
   return (sks, Fun arg_ty res_ty')
--- listとpairに拡張
-skolemise (TyList ty) = do
-  (sks, ty') <- skolemise ty
-  return (sks, TyList ty')
+-- XXX listとpairに拡張 XXX Listはダメ!!!
+--skolemise (TyList ty) = do
+--  (sks, ty') <- skolemise ty
+--  return (sks, TyList ty')
 skolemise (TyPair ty1 ty2) = do
   (sks1, ty1') <- skolemise ty1
   (sks2, ty2') <- skolemise ty2
@@ -299,16 +298,11 @@ unify (Fun arg1 res1) (Fun arg2 res2) = do
 unify TyInt  TyInt  = return ()
 unify TyBool TyBool = return ()
 
-unify sig1@(Forall tvs1 _) (Forall tvs2 ty2) -- Sigmaに拡張できる
+unify sig1@(Forall tvs1 _) (Forall tvs2 ty2) --P55 (2)の方法
   | length tvs1 == length tvs2 = do
       (sks1,ty1') <- skolemise sig1
       let ty2' = substTy tvs2 (map TyVar sks1) ty2
       unify ty1' ty2'
-
---unify (Forall [] ty1) ty2 =
---  unify ty1 ty2
---unify ty1 (Forall [] ty2) =
---  unify ty1 ty2
 
 unify (TyList ty1) (TyList ty2) =
   unify ty1 ty2
@@ -345,7 +339,6 @@ unifyUnboundVar tv1 ty2 = do
      then occursCheckErr tv1 ty2
      else writeTv tv1 ty2
 
-
 --(arg,res) <- unifyFun fun
 --unifies 'fun' with '(arg -> res)'
 --tcRhoの普遍条件によりresはRho
@@ -357,7 +350,7 @@ unifyFun tau = do
   unify tau (Fun arg_ty res_ty)
   return (arg_ty, res_ty)
 
-unifyList :: Rho -> Tc Sigma
+unifyList :: Tau -> Tc Tau
 unifyList (TyList tau) = return tau
 unifyList tau = do
   ty <- newTyVar
@@ -365,12 +358,20 @@ unifyList tau = do
   return ty
 
 unifyPair :: Rho -> Tc (Sigma, Sigma)
-unifyPair (TyPair tau1 tau2) = return (tau1,tau2)
+unifyPair (TyPair sig1 sig2) = return (sig1,sig2)
 unifyPair tau = do
   tau1 <- newTyVar
   tau2 <- newTyVar
   unify tau (TyPair tau1 tau2)
   return (tau1,tau2)
+
+unifyFix :: Rho -> Tc Sigma
+unifyFix (Fun tau1 tau2)
+  | tau1 == tau2 = return tau1
+unifyFix tau = do
+  tau1 <- newTyVar
+  unify tau (Fun tau1 tau1)
+  return tau1
 
 -- Raise an occurs-check error
 occursCheckErr :: MetaTv -> Tau -> Tc ()
@@ -381,6 +382,4 @@ occursCheckErr tv ty =
 badType :: Tau -> Bool
 badType (TyVar (BoundTv _)) = True
 badType _ = False
-
-
 
