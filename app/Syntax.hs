@@ -10,7 +10,10 @@ import qualified Data.Map as M
 type Name = String-- {{{
 -- }}}
 data Error = Failure String-- {{{
-           deriving (Show)
+           | Unify String
+instance Show Error where
+  show (Failure s) = "Failure: " ++ s
+  show (Unify s)   = "Unification Error: " ++ s
 -- }}}
 type TyEnv = M.Map Name Type-- {{{
 -- }}}
@@ -45,7 +48,8 @@ data Expr-- {{{
     | EApp Expr Expr
     | EFun Name Expr
     | EFunAnnot Name Type Expr
-    | ELet Name Expr Expr
+    | ELet    Name Expr Expr
+    | ELetRec Name Expr Expr
     | EAnnot Expr Type
     | EAdd Expr Expr
     | ESub Expr Expr
@@ -58,15 +62,24 @@ data Expr-- {{{
     | ENil
     | ECons  Expr Expr
     | EMatch Expr [(Pattern, Expr)]
-    | ELetRec Name Name Expr Expr
+    | EFix Expr
     deriving (Show, Eq)
 infixl 4 `EApp`
 -- }}}
 data Command-- {{{
     = CExp Expr
-    | CDecl Name Expr
-    | CRecDecl Name Name Expr
+    | CDecl [Declare]
     deriving (Show, Eq)
+-- }}}
+data Declare-- {{{
+    = Decl [(Name,Expr)]
+    | RecDecl [(Name,Expr)]
+    deriving (Show, Eq)
+-- }}}
+data Return-- {{{
+    = E Type Value
+    | D [(Name,Type,Value)] ValEnv TyEnv
+    deriving (Show,Eq)
 -- }}}
 type Sigma = Type-- {{{
 -- }}}

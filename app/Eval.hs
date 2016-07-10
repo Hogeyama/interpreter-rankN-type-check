@@ -4,6 +4,7 @@ module Eval where
 import Syntax
 import TypeCheck
 import qualified Data.Map as M
+import Data.Foldable (foldlM)
 import TypeCheck.TcMonad (lift)
 
 findMatch :: Pattern -> Value -> Maybe [(Name, Value)]
@@ -79,18 +80,23 @@ evalExpr e = case e of
               if b then evalExpr e2
                    else evalExpr e3
           _ -> fail $ "Type match error: (if)"
-    ELet x e1 e2 -> do
-      v <- evalExpr e1
-      extendValEnv x v $ evalExpr e2
     EFunAnnot x _ e1 -> do
       env <- getValEnv
       return $ VFun x e1 env
     EFun x e1 -> do
       env <- getValEnv
       return $ VFun x e1 env
-    ELetRec f x e1 e2 -> do
+    ELet x e1 e2 -> do
+      v <- evalExpr e1
+      extendValEnv x v $ evalExpr e2
+    ELetRec f (EFun x e1) e2 -> do
       env <- getValEnv
       extendValEnv f (VRecFun f x e1 env) (evalExpr e2)
+    ELetRec f (EAnnot (EFun x e1) _) e2 -> do
+      env <- getValEnv
+      extendValEnv f (VRecFun f x e1 env) (evalExpr e2)
+    ELetRec {} -> do
+      fail $ "recursive definition of values is not implemented"
     EApp e1 e2 -> do
       v1 <- evalExpr e1
       v2 <- evalExpr e2
@@ -99,8 +105,7 @@ evalExpr e = case e of
           localValEnv oenv $ extendValEnv x v2 $ evalExpr e'
           --逆順になることに注意. extend ~ $ local ~ $ ~ だと x unbound
         VRecFun f x e' oenv -> do
-          lift $ print oenv
-          localValEnv oenv $ extendValEnv f v1 $ extendValEnv x v2 $ evalExpr e'
+          localValEnv oenv $ extendValEnvList [(f,v1),(x,v2)] $ evalExpr e'
         _ -> fail $ "Eval Error: EApp"
 
     EPair e1 e2 -> do
@@ -122,18 +127,49 @@ evalExpr e = case e of
     EAnnot e _ ->
       evalExpr e
 
-evalCommand :: Command -> Tc (Maybe String, Type, Value)
+
+anySameBy :: (a -> a -> Bool) -> [a] -> Maybe a
+anySameBy eq l = f [] l
+  where
+    f xs []     = Nothing
+    f xs (y:ys) | any (`eq`y) xs = Just y
+                | otherwise      = f (y:xs) ys
+
+evalDecl :: Declare -> Tc ([Name],[Type],[Value])
+evalDecl (Decl l) =
+  case anySameBy (\(x,_) (y,_) -> x==y) l of
+    Just (x,_) ->
+      fail $ "Variable `" ++ x ++ "` is bound several times in this matching"
+    Nothing -> do
+      let (xs,es) = unzip l
+      tys <- mapM inferExpr es
+      vs  <- mapM evalExpr es
+      return $ (xs, tys, vs)
+evalDecl (RecDecl [(f,e)]) =
+  evalDecl (Decl [(f, ELetRec f e (EVar f))])
+evalDecl (RecDecl l) =
+  case anySameBy (\(x,_) (y,_) -> x==y) l of
+    Just (x,_) ->
+      fail $ "Variable `" ++ x ++ "` is bound several times in this matching"
+    Nothing -> do
+      fail $ "let rec and: not implemented"
+
+evalCommand :: Command -> Tc Return
 evalCommand (CExp e) = do
   sigma <- inferExpr e
   v <- evalExpr e
-  return (Nothing, sigma, v)
-evalCommand (CDecl x e) = do
-  sigma <- inferExpr e
-  v <- evalExpr e
-  return (Just x, sigma, v)
-evalCommand (CRecDecl f x e) = do
-  evalCommand (CDecl f (ELetRec f x e (EVar f)))
-
-
-
+  return $ E sigma v
+evalCommand (CDecl l) = do
+  let f :: [(Name,Type,Value)] -> [Declare] -> Tc Return
+      f l [] = do
+        valenv <- getValEnv
+        tyenv  <- getTyEnv
+        return $ D l valenv tyenv
+      f l (dec:decs) = do
+        (xs,tys,vs) <- evalDecl dec
+        let l' = l ++ zip3 xs tys vs
+        extendTyEnvList (zip xs tys) $
+          extendValEnvList (zip xs vs) $
+            f l' decs
+  f [] l
 

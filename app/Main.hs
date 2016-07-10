@@ -9,11 +9,13 @@ import Parser as P
 import Lexer as L
 import GHC.IO.Handle    (hFlush)
 import GHC.IO.Handle.FD (stdout)
-import Control.Exception.Base (catch, IOException)
+import Control.Exception.Base (IOException)
 import System.IO.Error (isEOFError)
 import qualified Data.Map as M
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Catch
+import Data.List (nubBy)
 
 getLines :: IO String
 getLines =
@@ -29,16 +31,25 @@ getLines =
 print' :: Show s => s -> IO ()
 print' = putStr . show
 
-mainPrint :: (Maybe String, Type, Value) -> IO ()
-mainPrint (mx, sigma, v) = do
-  case mx of
-    Nothing -> putStr "-"
-    Just x  -> putStr $ "val " ++ x
+mainPrint :: Return -> IO ()
+mainPrint (E ty v) = do
+  putStr "-"
   putStr " : "
-  print' sigma
+  print' ty
   putStr " = "
   print v
+mainPrint (D l _ _) = do
+  let l' = reverse $ nubBy (\(x,_,_) (y,_,_) -> x==y) $ reverse l
+  mapM_ f l'
+  where
+    f (x,ty,v) = do
+      putStr $ "val " ++ x
+      putStr " : "
+      print' ty
+      putStr " = "
+      print v
 
+--Ctrl.Monad.CatchIO
 repl :: ValEnv -> TyEnv -> IO ()
 repl valenv tyenv =
   do putStr "# "
@@ -50,14 +61,14 @@ repl valenv tyenv =
        ret    <- ExceptT $ runTc valenv tyenv $ evalCommand cmd
        return ret
      case mret of
-       Right ret@(Just x,ty,v) -> do
-         mainPrint ret
-         repl (M.insert x v valenv) (M.insert x ty tyenv)
-       Right ret@(Nothing,ty,v) -> do
+       Right ret@(D _ valenv tyenv) -> do
          mainPrint ret
          repl valenv tyenv
-       Left (Failure s) -> do
-         putStrLn s
+       Right ret@(E ty v) -> do
+         mainPrint ret
+         repl valenv tyenv
+       Left e -> do
+         print e
          repl valenv tyenv
   `catch` \e -> if
      | isEOFError e -> return ()

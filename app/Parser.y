@@ -57,15 +57,27 @@ import Control.Exception.Base (throw, throwIO)
 TopLevel :: { Command }
 TopLevel
     : Expr ';;' { CExp $1 }
-    | let Var Args0 '=' Expr ';;'         { CDecl $2 (mkFun $3 $5) }
-    | let rec Var Var Args0 '=' Expr ';;' { CRecDecl $3 $4 (mkFun $5 $7) }
-    | let Var ':' Sigma '=' Expr ';;'     { CDecl $2 (EAnnot $6 $4) }
+    | Declare ';;' { CDecl $1 }
+
+Declare :: { [Declare] }
+Declare
+    : let     DeclareUnit         { [Decl $2]       }
+    | let     DeclareUnit Declare { (Decl $2):$3    }
+    | let rec DeclareUnit         { [RecDecl $3]    }
+    | let rec DeclareUnit Declare { (RecDecl $3):$4 }
+
+DeclareUnit :: { [(Name,Expr)] }
+DeclareUnit
+    : Var Args0 '=' Expr                     { [($1, mkFun $2 $4)]   }
+    | Var Args0 '=' Expr and DeclareUnit     { ($1, mkFun $2 $4):$6  }
+    | Var ':' Sigma '=' Expr                 { [($1, EAnnot $5 $3)]  }
+    | Var ':' Sigma '=' Expr and DeclareUnit { ($1, EAnnot $5 $3):$7 }
 
 Expr :: { Expr }
 Expr
     : let Var Args0 '=' Expr in Expr         { ELet $2 (mkFun $3 $5) $7       }
-    | let Var ':' Sigma '=' Expr in Expr      { ELet $2 (EAnnot $6 $4) $8      }
-    | let rec Var Var Args0 '=' Expr in Expr { ELetRec $3 $4 (mkFun $5 $7) $9 }
+    | let Var ':' Sigma '=' Expr in Expr     { ELet $2 (EAnnot $6 $4) $8      }
+    | let rec Var Args0 '=' Expr in Expr     { ELetRec $3 (mkFun $4 $6) $8    }
     | if Expr then Expr else Expr            { EIf $2 $4 $6                   }
     | fun Args1 '->' Expr                    { mkFun $2 $4                    }
     | ArithExpr '=' ArithExpr                { EEq $1 $3                      }
@@ -99,7 +111,7 @@ ListExpr
 ArithExpr :: { Expr }
 ArithExpr
     : ArithExpr '+' ArithExpr { EAdd $1 $3 }
-    | ArithExpr '-' ArithExpr { EAdd $1 $3 }
+    | ArithExpr '-' ArithExpr { ESub $1 $3 }
     | FactorExpr              { $1         }
 
 FactorExpr :: { Expr }
@@ -145,6 +157,7 @@ TyVars
     : id { [BoundTv $1] }
     | id TyVars { BoundTv $1 : $2 }
 
+--TODO
 --Syntax.hsのSigmaとかとは関係ないです bad name ><
 Sigma :: { Type }
 Sigma
@@ -162,20 +175,20 @@ Tau
     | TauSub          { $1 }
 
 TauSub
-    : Tau '*' Tau   { TyPair $1 $3 } 
+    : Tau '*' Tau   { TyPair $1 $3 }
     | TauSubSub { $1 }
 
 TauSubSub :: { Type }
-    : intT          { TyInt        } 
-    | boolT         { TyBool       } 
-    | TyVar         { TyVar $1     } 
-    | '(' Sigma ')' { $2           } 
-    | Tau list      { TyList $1    } 
+    : intT          { TyInt        }
+    | boolT         { TyBool       }
+    | TyVar         { TyVar $1     }
+    | '(' Sigma ')' { $2           }
+    | Tau list      { TyList $1    }
 
 {
 
 parseError :: [Token] -> Either Error a
-parseError _ = Left $ Failure "Parse error"
+parseError tks = Left $ Failure $ "Parse error:\n" ++ show tks
 
 mkFun :: [(Name, Maybe Type)] -> Expr -> Expr
 mkFun argtys e =
