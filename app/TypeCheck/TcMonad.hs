@@ -1,7 +1,8 @@
+{-# LANGUAGE LambdaCase #-}
 
 module TypeCheck.TcMonad (
   -- The monad type constructor
-  Tc(..),
+  Tc(..), catchE,
   -- Environment manipulation
   getValEnv, getTyEnv,
   runTc, lift, liftEither, check,
@@ -22,6 +23,7 @@ import qualified Data.Map as M
 import Data.IORef
 import Data.List ((\\), foldl')
 import Control.Monad (ap)
+import Control.Monad.Catch
 
 --- ---------------------- ---
 --- Monad & base functions ---
@@ -32,10 +34,7 @@ data TcEnv =
           tyEnv :: M.Map Name Sigma,
           valEnv :: M.Map Name Value }
 
-newtype Tc a = Tc (TcEnv -> IO (Either Error a))
-
-unTc :: Tc a -> (TcEnv -> IO (Either Error a))
-unTc (Tc a) = a
+newtype Tc a = Tc { unTc :: TcEnv -> IO (Either Error a) }
 
 instance Functor Tc where
   fmap f m = Tc $ \env -> do
@@ -48,12 +47,27 @@ instance Applicative Tc where
   (<*>) = ap
 instance Monad Tc where
   return = pure
-  fail err = Tc $ \_ -> return (Left (Failure err))
+  fail err = Tc $ \_ -> return $ Left $ Failure err
   m >>= k  = Tc $ \env -> do
     r1 <- unTc m env
     case r1 of
       Left err -> return (Left err)
       Right v -> unTc (k v) env
+instance Exception Error
+instance MonadThrow Tc where
+  throwM = lift . throwM
+instance MonadCatch Tc where
+  catch (Tc m) f = Tc $ \env -> catch (m env) (\e -> unTc (f e) env)
+
+catchE :: Tc a -> (Error -> Tc a) -> Tc a
+(Tc m) `catchE` h = Tc $ \env -> do
+    a <- m env
+    case a of
+      Right x -> return $ Right x
+      Left e  -> unTc (h e) env
+
+unifyErr :: String -> Tc a
+unifyErr s = Tc $ \_ -> return $ Left $ Unify s
 
 lift :: IO a -> Tc a
 lift st = Tc $ \_ -> Right <$> st
@@ -126,7 +140,7 @@ lookupVar n = do
   env <- getTyEnv
   case M.lookup n env of
     Just ty -> return ty
-    Nothing -> fail ("Not in scope: '" ++ show n ++ "'")
+    Nothing -> fail ("Not in scope: '" ++ n ++ "'")
 
 
 --- ------ ---
@@ -312,7 +326,7 @@ unify (TyPair ty11 ty12) (TyPair ty21 ty22) = do
   unify ty12 ty22
 
 unify ty1 ty2 =
-  fail ("Cannot unify types: " ++ show ty1 ++ "," ++ show ty2)
+  unifyErr ("Cannot unify types: " ++ show ty1 ++ "," ++ show ty2)
 
 -- Invariant: tv1 is a flexible type variable
 -- Check whether tv1 is boundPractical type inference for arbitrary-rank types
@@ -344,39 +358,47 @@ unifyUnboundVar tv1 ty2 = do
 --tcRhoの普遍条件によりresはRho
 unifyFun :: Rho -> Tc (Sigma, Rho)
 unifyFun (Fun arg res) = return (arg,res)
-unifyFun tau = do
-  arg_ty <- newTyVar
-  res_ty <- newTyVar
-  unify tau (Fun arg_ty res_ty)
-  return (arg_ty, res_ty)
+unifyFun tau =
+  do  arg_ty <- newTyVar
+      res_ty <- newTyVar
+      unify tau (Fun arg_ty res_ty)
+      return (arg_ty, res_ty)
+  `catchE` \case
+      Unify s -> fail $ show tau ++ " cannot be a function type"
 
 unifyList :: Tau -> Tc Tau
 unifyList (TyList tau) = return tau
-unifyList tau = do
-  ty <- newTyVar
-  unify tau (TyList ty)
-  return ty
+unifyList tau =
+  do  ty <- newTyVar
+      unify tau (TyList ty)
+      return ty
+  `catchE` \case
+      Unify s -> fail $ show tau ++ " cannot be a list type"
 
 unifyPair :: Rho -> Tc (Sigma, Sigma)
 unifyPair (TyPair sig1 sig2) = return (sig1,sig2)
-unifyPair tau = do
-  tau1 <- newTyVar
-  tau2 <- newTyVar
-  unify tau (TyPair tau1 tau2)
-  return (tau1,tau2)
+unifyPair tau =
+  do  tau1 <- newTyVar
+      tau2 <- newTyVar
+      unify tau (TyPair tau1 tau2)
+      return (tau1,tau2)
+  `catchE` \case
+      Unify s -> fail $ show tau ++ " cannot be a pair type"
 
 unifyFix :: Rho -> Tc Sigma
 unifyFix (Fun tau1 tau2)
   | tau1 == tau2 = return tau1
-unifyFix tau = do
-  tau1 <- newTyVar
-  unify tau (Fun tau1 tau1)
-  return tau1
+unifyFix tau =
+  do  tau1 <- newTyVar
+      unify tau (Fun tau1 tau1)
+      return tau1
+  `catchE` \case
+      Unify s -> fail $ show tau ++ " cannot be a pair type"
 
 -- Raise an occurs-check error
 occursCheckErr :: MetaTv -> Tau -> Tc ()
 occursCheckErr tv ty =
-  fail $ "Occurs check for " ++ show tv ++ " in " ++ show ty
+  unifyErr $ "Occurs check for " ++ show tv ++ " in " ++ show ty
 
 -- Tells which types should never be encountered during unification
 badType :: Tau -> Bool

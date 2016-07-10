@@ -51,7 +51,10 @@ tcRho (EVar v) exp_ty = do
 tcRho (EApp fun arg) exp_ty = do
   fun_ty <- inferRho fun
   (arg_ty, res_ty) <- unifyFun fun_ty
-  checkSigma arg arg_ty
+  checkSigma arg arg_ty `catchE` \_ -> do
+    sigma <- inferSigma arg
+    fail $ "Couldn't match expected type `" ++ show arg_ty ++
+           "` with acutual type `" ++ show sigma ++ "`"
   instSigma res_ty exp_ty
 tcRho (EFun var body) (Check exp_ty) = do
   (var_ty, body_ty) <- unifyFun exp_ty
@@ -161,15 +164,19 @@ tcRho (EMatch e l) (Check exp_ty) = do
   mapM_ (`instSigma` (Check exp_ty)) res_tys
   return ()
 
-tcRho (ELetRec f x e1 e2) exp_ty = do
-  e1_ty <- inferRho $ EFun f (EFun x e1)
-  e1_ty <- unifyFix e1_ty -- a->aの制限をつけてからquantify
-  env_tys <- getEnvTypes
-  env_tvs <- getMetaTyVars env_tys
-  res_tvs <- getMetaTyVars [e1_ty]
-  let forall_tvs = res_tvs \\ env_tvs
-  e1_ty <- quantify forall_tvs e1_ty
-  extendTyEnv f e1_ty (tcRho e2 exp_ty)
+tcRho (ELetRec f (EAnnot e1 sigma) e2) exp_ty = do
+  checkSigma (EFix (EFun f e1)) sigma
+  extendTyEnv f sigma (tcRho e2 exp_ty)
+tcRho (ELetRec f e1 e2) exp_ty = do
+  sigma <- inferSigma (EFix (EFun f e1))
+  extendTyEnv f sigma (tcRho e2 exp_ty)
+
+tcRho (EFix e1) (Infer ref) = do
+  e1_ty <- inferRho e1
+  e_ty <- unifyFix e1_ty
+  writeTcRef ref e_ty
+tcRho (EFix e1) (Check exp_ty) = do
+  tcRho e1 (Check $ Fun exp_ty exp_ty)
 
 tcPLamRho :: (Pattern, Expr) -> Expected Rho -> Tc ()
 tcPLamRho (pat, body) (Infer ref) = do
