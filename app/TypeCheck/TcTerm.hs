@@ -5,7 +5,7 @@ import Syntax
 import TypeCheck.TcMonad
 
 import Data.IORef
-import Data.List( (\\) )
+import Data.List((\\))
 
 --- --------------------- ---
 --- The top-level wrapper ---
@@ -145,8 +145,8 @@ tcRho (EPair e1 e2) (Check exp_ty) = do
   checkSigma e1 ty1
   checkSigma e2 ty2
 tcRho (EPair e1 e2) (Infer ref) = do
-  ty1 <- inferSigma e1
-  ty2 <- inferSigma e2
+  ty1 <- inferRho e1
+  ty2 <- inferRho e2
   writeTcRef ref (TyPair ty1 ty2)
 
 -- EMatch e [(pat, body)] = EPLam pat body `EApp` e
@@ -164,6 +164,7 @@ tcRho (EMatch e l) (Check exp_ty) = do
   mapM_ (`instSigma` (Check exp_ty)) res_tys
   return ()
 
+--これだけ特別視するのは汚いのでELetRecAnnotを作るべき
 tcRho (ELetRec f (EAnnot e1 sigma) e2) exp_ty = do
   checkSigma (EFix (EFun f e1)) sigma
   extendTyEnv f sigma (tcRho e2 exp_ty)
