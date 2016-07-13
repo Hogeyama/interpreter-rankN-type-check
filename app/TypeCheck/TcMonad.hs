@@ -59,6 +59,9 @@ instance MonadThrow Tc where
 instance MonadCatch Tc where
   catch (Tc m) f = Tc $ \env -> catch (m env) (\e -> unTc (f e) env)
 
+raise :: Error -> Tc a
+raise e = Tc $ \_ -> return $ Left e
+
 catchE :: Tc a -> (Error -> Tc a) -> Tc a
 (Tc m) `catchE` h = Tc $ \env -> do
     a <- m env
@@ -359,6 +362,7 @@ unifyFun tau =
       return (arg_ty, res_ty)
   `catchE` \case
       Unify s -> fail $ show tau ++ " cannot be a function type"
+      e -> raise e
 
 unifyList :: Tau -> Tc Tau
 unifyList (TyList tau) = return tau
@@ -368,6 +372,7 @@ unifyList tau =
       return ty
   `catchE` \case
       Unify s -> fail $ show tau ++ " cannot be a list type"
+      e -> raise e
 
 unifyPair :: Rho -> Tc (Sigma, Sigma)
 unifyPair (TyPair sig1 sig2) = return (sig1,sig2)
@@ -378,6 +383,7 @@ unifyPair tau =
       return (tau1,tau2)
   `catchE` \case
       Unify s -> fail $ show tau ++ " cannot be a pair type"
+      e -> raise e
 
 unifyFix :: Rho -> Tc Sigma
 unifyFix (Fun tau1 tau2)
@@ -388,6 +394,7 @@ unifyFix tau =
       return tau1
   `catchE` \case
       Unify s -> fail $ show tau ++ " cannot be a pair type"
+      e -> raise e
 
 -- Raise an occurs-check error
 occursCheckErr :: MetaTv -> Tau -> Tc ()

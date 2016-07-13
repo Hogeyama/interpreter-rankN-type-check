@@ -21,6 +21,8 @@ findMatch (PPair p1 p2) (VPair v1 v2) =
 findMatch PNil VNil = Just []
 findMatch (PCons p1 p2) (VCons v1 v2) =
     (++) <$> findMatch p1 v1 <*> findMatch p2 v2
+findMatch (PAnnot p _) v =
+    findMatch p v
 findMatch _ _ = Nothing
 
 lookupValEnv :: Name -> ValEnv -> Maybe Value
@@ -126,6 +128,7 @@ evalExpr e = case e of
       f l
     EAnnot e _ ->
       evalExpr e
+    EFix {} -> fail "Impossible"
 
 
 anySameBy :: (a -> a -> Bool) -> [a] -> Maybe a
@@ -172,8 +175,14 @@ evalCommand (CDecl l) = do
           extendValEnvList (zip xs vs) $
             f l' decs
   f [] l
-evalCommand (CDirect "use" source) =
-  return $ Dir "use" source
+evalCommand (CDirect "use" [source]) =
+  return $ Dir (Use source)
+evalCommand (CDirect "use" _) =
+  fail $ "多い"
+evalCommand (CDirect s _) =
+  fail $ "unknown direction s"
+
+
 
 
 

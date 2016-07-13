@@ -125,22 +125,14 @@ tcRho (EIf e1 e2 e3) exp_ty = do --TODO
 --  unify ty2 ty3
 --  writeTcRef ref ty2
 
-tcRho ENil (Check exp_ty) = do
-  check (isTau exp_ty) "Impredicative type is not allowed"
-  unifyList exp_ty
-  return ()
-tcRho ENil (Infer ref) = do
-  ty <- newTyVar
-  writeTcRef ref (TyList ty)
-tcRho (ECons e1 e2) (Check exp_ty) = do
-  ty <- unifyList exp_ty
-  checkRho e1 ty
-  checkRho e2 (TyList ty)
-tcRho (ECons e1 e2) (Infer ref) = do
+tcRho ENil exp_ty = do
+  ty <- TyList <$> newTyVar
+  instSigma ty exp_ty
+tcRho (ECons e1 e2) exp_ty = do
   ty <- newTyVar
   checkRho e1 ty
   checkRho e2 (TyList ty)
-  writeTcRef ref (TyList ty)
+  instSigma (TyList ty) exp_ty
 
 tcRho (EPair e1 e2) (Check exp_ty) = do
   (ty1, ty2) <- unifyPair exp_ty
@@ -151,14 +143,12 @@ tcRho (EPair e1 e2) (Infer ref) = do
   ty2 <- inferRho e2
   writeTcRef ref (TyPair ty1 ty2)
 
--- EMatch e [(pat, body)] = EPLam pat body `EApp` e
 tcRho (EMatch e l) (Infer ref) = do
   fun_tys <- mapM inferPLamRho l
   (arg_tys, res_ty:res_tys)<- unzip <$> mapM unifyFun fun_tys
   mapM_ (checkSigma e) arg_tys
-  ret <- instantiate res_ty -- instSigma (Infer)の代わり(こっちのが短いので)
-  mapM_ (`instSigma` Check ret) res_tys
-  writeTcRef ref ret
+  mapM_ (`instSigma` Check res_ty) res_tys
+  writeTcRef ref res_ty
 tcRho (EMatch e l) (Check exp_ty) = do
   fun_tys <- mapM inferPLamRho l
   (arg_tys, res_tys)<- unzip <$> mapM unifyFun fun_tys
@@ -166,10 +156,11 @@ tcRho (EMatch e l) (Check exp_ty) = do
   mapM_ (`instSigma` (Check exp_ty)) res_tys
   return ()
 
---これだけ特別視するのは汚いのでELetRecAnnotを作るべき
+--これだけ特別視するのは汚いのでELetRecAnnotを作るほうが良い
 tcRho (ELetRec f (EAnnot e1 sigma) e2) exp_ty = do
   checkSigma (EFix (EFun f e1)) sigma
   extendTyEnv f sigma (tcRho e2 exp_ty)
+
 tcRho (ELetRec f e1 e2) exp_ty = do
   sigma <- inferSigma (EFix (EFun f e1))
   extendTyEnv f sigma (tcRho e2 exp_ty)
@@ -228,28 +219,35 @@ tcPat (PVar v) (Infer ref) = do
   writeTcRef ref ty
   return [(v,ty)]
 
-tcPat (PPair p1 p2) exp_ty = do
-  ty1 <- newTyVar
-  ty2 <- newTyVar
-  let res_ty = TyPair ty1 ty2
-  env1 <- tcPat p1 (Check ty1)
-  env2 <- tcPat p2 (Check ty2)
-  instPatSigma res_ty exp_ty
+tcPat (PPair p1 p2) (Check exp_ty) = do
+  (sigma1,sigma2) <- unifyPair exp_ty
+  env1 <- tcPat p1 (Check sigma1)
+  env2 <- tcPat p2 (Check sigma2)
+  return $ env1++env2
+tcPat (PPair p1 p2) (Infer ref) = do
+  (env1,sigma1) <- inferPat p1
+  (env2,sigma2) <- inferPat p2
+  writeTcRef ref (TyPair sigma1 sigma2)
   return $ env1++env2
 
 tcPat PNil exp_ty = do
   ty <- TyList <$> newTyVar
-  instPatSigma ty exp_ty
+  instSigma ty exp_ty
   return []
 
 tcPat (PCons p1 p2) exp_ty = do
   ty1 <- newTyVar
-  let res_ty = TyList ty1
   env1 <- tcPat p1 (Check ty1)
   env2 <- tcPat p2 (Check (TyList ty1))
-  instPatSigma res_ty exp_ty
+  instSigma (TyList ty1) exp_ty
   return $ env1++env2
 
+tcPat (PAnnot p ann_ty) exp_ty = do
+  env <- checkPat p ann_ty
+  instPatSigma ann_ty exp_ty
+  return env
+
+-- パターンに対するannotationを実装していないので不要
 instPatSigma :: Sigma -> Expected Sigma -> Tc ()
 instPatSigma pat_ty (Infer ref) = writeTcRef ref pat_ty
 instPatSigma pat_ty (Check exp_ty) = subsCheck exp_ty pat_ty
@@ -306,7 +304,7 @@ subsCheck sigma1 sigma2 = do
   let bad_tvs = filter (`elem` esc_tvs) skol_tvs
   check (null bad_tvs) $
     "Subsumption check failed: " ++ show sigma1 ++
-    "is not as polymorphic as " ++ show sigma2
+    " is not as polymorphic as " ++ show sigma2
 
 -- |- dsk*
 -- Invariant: the second argument is in weak-prenex form
@@ -337,29 +335,6 @@ subsCheckRho sigma rho = do
     (tau1, tau2) -> do
         unify tau1 tau2
 
----- Rule SPEC
---subsCheckRho sigma1@(Forall _ _) rho2 = do
---  rho1 <- instantiate sigma1
---  subsCheckRho rho1 rho2
---
----- Rule FUN
---subsCheckRho rho1 (Fun a2 r2) = do
---  (a1,r1) <- unifyFun rho1
---  subsCheckFun a1 r1 a2 r2
---
----- Rule FUN
---subsCheckRho (Fun a1 r1) rho2 = do
---  (a2,r2) <- unifyFun rho2
---  subsCheckFun a1 r1 a2 r2
---
---subsCheckRho (TyPair a1 b1) rho2 = do
---  (a2, b2) <- unifyPair rho2
---  subsCheckRho a1 a2
---  subsCheckRho b1 b2
---
----- Rule MONO
---subsCheckRho tau1 tau2 = do
---  unify tau1 tau2
 
 subsCheckFun :: Sigma -> Rho -> Sigma -> Rho -> Tc ()
 subsCheckFun a1 r1 a2 r2 = do
@@ -379,6 +354,7 @@ instSigma t1 (Infer r) = do
   t1' <- instantiate t1
   writeTcRef r t1'
 
+
 isTau :: Type -> Bool
 isTau ty = case ty of
     Forall [] ty -> isTau ty
@@ -389,6 +365,7 @@ isTau ty = case ty of
     TyPair ty1 ty2 -> isTau ty1 && isTau ty2
     TyList ty1 -> isTau ty1
     MetaTv _ -> True
+    Fun ty1 ty2 -> isTau ty1 && isTau ty2
 
 isImpredicativeType :: Type -> Bool
 isImpredicativeType ty = case ty of
@@ -402,7 +379,4 @@ isImpredicativeType ty = case ty of
     TyPair ty1 ty2 -> isImpredicativeType ty1
                    || isImpredicativeType ty2
     TyList ty' -> not $ isTau ty'
-
-
-
 

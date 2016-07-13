@@ -27,6 +27,7 @@ data Pattern-- {{{
     | PNil
     | PCons Pattern Pattern
     | PWild
+    | PAnnot Pattern Sigma
     deriving (Show, Eq)
 -- }}}
 data Value-- {{{
@@ -47,10 +48,10 @@ data Expr-- {{{
     | EVar Name
     | EApp Expr Expr
     | EFun Name Expr
-    | EFunAnnot Name Type Expr
+    | EFunAnnot Name Sigma Expr
     | ELet    Name Expr Expr
     | ELetRec Name Expr Expr
-    | EAnnot Expr Type
+    | EAnnot Expr Sigma
     | EAdd Expr Expr
     | ESub Expr Expr
     | EMul Expr Expr
@@ -72,6 +73,10 @@ data Command-- {{{
     | CDirect String [String]
     deriving (Show, Eq)
 -- }}}
+data Direct-- {{{
+    = Use String
+    deriving (Show, Eq)
+-- }}}
 data Declare-- {{{
     = Decl [(Name,Expr)]
     | RecDecl [(Name,Expr)]
@@ -80,7 +85,7 @@ data Declare-- {{{
 data Return-- {{{
     = Exp Type Value
     | Dec [(Name,Type,Value)] ValEnv TyEnv
-    | Dir String [String]
+    | Dir Direct
     deriving (Show,Eq)
 -- }}}
 type Sigma = Type-- {{{

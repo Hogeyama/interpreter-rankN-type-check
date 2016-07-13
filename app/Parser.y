@@ -84,15 +84,19 @@ Expr :: { Expr }
     | match Expr with '|' Cases          { EMatch $2 $5                }
     | ListExpr                           { $1                          }
 
-Cases
+Cases :: { [(Pattern, Expr)] }
     : Pattern '->' Expr           { [($1,$3)]  }
     | Pattern '->' Expr '|' Cases { ($1,$3):$5 }
 
-Pattern
-    : AtomicPattern '::' Pattern { PCons $1 $3 }
-    | AtomicPattern              { $1          }
+Pattern :: { Pattern }
+    : Pattern ':' '(' Type ')' { PAnnot $1 $4 }
+    | ConsPattern              { $1           }
 
-AtomicPattern
+ConsPattern :: { Pattern }
+    : AtomicPattern '::' ConsPattern { PCons $1 $3 }
+    | AtomicPattern                  { $1          }
+
+AtomicPattern :: { Pattern }
     : int                         { PInt $1     }
     | bool                        { PBool $1    }
     | Var                         { PVar $1     }

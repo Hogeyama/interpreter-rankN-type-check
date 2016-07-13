@@ -41,19 +41,20 @@ mainPrint (Exp ty v) = do
   print v
 mainPrint (Dec l _ _) = do
   let l' = reverse $ nubBy (\(x,_,_) (y,_,_) -> x==y) $ reverse l
+      f (x,ty,v) = do
+        putStr $ "val " ++ x
+        putStr " : "
+        print' ty
+        putStr " = "
+        print v
   mapM_ f l'
-  where
-    f (x,ty,v) = do
-      putStr $ "val " ++ x
-      putStr " : "
-      print' ty
-      putStr " = "
-      print v
+mainPrint ret = do
+  putStrLn $ "Error: mainPrint: " ++ show ret
 
---Ctrl.Monad.CatchIO
 repl :: Handle -> ValEnv -> TyEnv -> IO ()
 repl handle valenv tyenv =
-  do if handle==stdin then putStr "# " else return ()
+  do if handle==stdin
+        then putStr "# " else return ()
      hFlush stdout
      s <- hGetLines handle
      mret <- runExceptT $ do
@@ -68,7 +69,7 @@ repl handle valenv tyenv =
        Right ret@(Dec _ valenv tyenv) -> do
          mainPrint ret
          repl stdin valenv tyenv
-       Right ret@(Dir "use" [source]) -> do
+       Right ret@(Dir (Use source)) -> do
          handle <- openFile source ReadMode
          repl handle emptyValEnv emptyTyEnv
        Left e -> do

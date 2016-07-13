@@ -7,46 +7,47 @@ import Syntax
 
 $digit = 0-9
 $alpha = [a-zA-Z]
+@ident = $alpha ($alpha | $digit | ')*
 
 tokens :-
-  $white+                       ;
-  \+                              { \s -> TokenPlus         }
-  \*                              { \s -> TokenTimes        }
-  \-                              { \s -> TokenMinus        }
-  \/                              { \s -> TokenDiv          }
-  \=                              { \s -> TokenEq           }
-  \<                              { \s -> TokenLt           }
-  let                             { \s -> TokenLet          }
-  rec                             { \s -> TokenRec          }
-  in                              { \s -> TokenIn           }
-  and                             { \s -> TokenAnd          }
-  if                              { \s -> TokenIf           }
-  then                            { \s -> TokenThen         }
-  else                            { \s -> TokenElse         }
-  true                            { \s -> TokenBool True    }
-  false                           { \s -> TokenBool False   }
-  \(                              { \s -> TokenLParen       }
-  \)                              { \s -> TokenRParen       }
-  fun                             { \s -> TokenFun          }
-  \-\>                            { \s -> TokenArrow        }
-  \[                              { \s -> TokenLBracket     }
-  \]                              { \s -> TokenRBracket     }
-  \:\:                            { \s -> TokenCons         }
-  \,                              { \s -> TokenComma        }
-  match                           { \s -> TokenMatch        }
-  with                            { \s -> TokenWith         }
-  \|                              { \s -> TokenBar          }
-  int                             { \s -> TokenIntT         }
-  bool                            { \s -> TokenBoolT        }
-  list                            { \s -> TokenListT        }
-  forall                          { \s -> TokenFolall       }
-  \:                              { \s -> TokenColon        }
-  \.                              { \s -> TokenDot          }
-  \_                              { \s -> TokenWild         }
-  \;\;                            { \s -> TokenSemiSemi     }
-  \#                              { \s -> TokenSharp        }
-  $digit+                         { \s -> TokenInt (read s) }
-  $alpha [$alpha $digit \_ \']*   { \s -> TokenID s         }
+  $white+ ;
+  \+      { \s -> TokenPlus         }
+  \*      { \s -> TokenTimes        }
+  \-      { \s -> TokenMinus        }
+  \/      { \s -> TokenDiv          }
+  \=      { \s -> TokenEq           }
+  \<      { \s -> TokenLt           }
+  let     { \s -> TokenLet          }
+  rec     { \s -> TokenRec          }
+  in      { \s -> TokenIn           }
+  and     { \s -> TokenAnd          }
+  if      { \s -> TokenIf           }
+  then    { \s -> TokenThen         }
+  else    { \s -> TokenElse         }
+  true    { \s -> TokenBool True    }
+  false   { \s -> TokenBool False   }
+  \(      { \s -> TokenLParen       }
+  \)      { \s -> TokenRParen       }
+  fun     { \s -> TokenFun          }
+  \-\>    { \s -> TokenArrow        }
+  \[      { \s -> TokenLBracket     }
+  \]      { \s -> TokenRBracket     }
+  \:\:    { \s -> TokenCons         }
+  \,      { \s -> TokenComma        }
+  match   { \s -> TokenMatch        }
+  with    { \s -> TokenWith         }
+  \|      { \s -> TokenBar          }
+  int     { \s -> TokenIntT         }
+  bool    { \s -> TokenBoolT        }
+  list    { \s -> TokenListT        }
+  forall  { \s -> TokenFolall       }
+  \:      { \s -> TokenColon        }
+  \.      { \s -> TokenDot          }
+  \_      { \s -> TokenWild         }
+  \;\;    { \s -> TokenSemiSemi     }
+  \#      { \s -> TokenSharp        }
+  $digit+ { \s -> TokenInt (read s) }
+  @ident  { \s -> TokenID s         }
 
 {
 -- The token type:
