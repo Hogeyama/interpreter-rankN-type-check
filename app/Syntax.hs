@@ -69,6 +69,7 @@ infixl 4 `EApp`
 data Command-- {{{
     = CExp Expr
     | CDecl [Declare]
+    | CDirect String [String]
     deriving (Show, Eq)
 -- }}}
 data Declare-- {{{
@@ -77,8 +78,9 @@ data Declare-- {{{
     deriving (Show, Eq)
 -- }}}
 data Return-- {{{
-    = E Type Value
-    | D [(Name,Type,Value)] ValEnv TyEnv
+    = Exp Type Value
+    | Dec [(Name,Type,Value)] ValEnv TyEnv
+    | Dir String [String]
     deriving (Show,Eq)
 -- }}}
 type Sigma = Type-- {{{

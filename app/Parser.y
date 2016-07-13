@@ -46,6 +46,7 @@ import Control.Exception.Base (throw, throwIO)
     '.'    { TokenDot      }
     '_'    { TokenWild     }
     and    { TokenAnd      }
+    '#'    { TokenSharp    }
 
 %right in
 %nonassoc '>' '<'
@@ -56,8 +57,9 @@ import Control.Exception.Base (throw, throwIO)
 
 TopLevel :: { Command }
 TopLevel
-    : Expr ';;' { CExp $1 }
-    | Declare ';;' { CDecl $1 }
+    : Expr ';;'        { CExp $1         }
+    | Declare ';;'     { CDecl $1        }
+    | '#' Var Var ';;' { CDirect $2 [$3] }
 
 Declare :: { [Declare] }
 Declare
@@ -188,7 +190,7 @@ TauSubSub :: { Type }
 {
 
 parseError :: [Token] -> Either Error a
-parseError tks = Left $ Failure $ "Parse error:\n" ++ show tks
+parseError tks = Left $ Failure $ "Parse error:\n"
 
 mkFun :: [(Name, Maybe Type)] -> Expr -> Expr
 mkFun argtys e =

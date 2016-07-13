@@ -16,15 +16,16 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Catch
 import Data.List (nubBy)
+import System.IO (Handle, stdin, hGetChar, openFile, IOMode(..))
 
-getLines :: IO String
-getLines =
+hGetLines :: Handle -> IO String
+hGetLines handle =
     let f cs@(';':';':_) = go (reverse cs)
         f cs = do
-          c <- getChar
+          c <- hGetChar handle
           f (c:cs)
         go cs = do
-          c <- getChar
+          c <- hGetChar handle
           if c=='\n' then return cs else go cs
     in f []
 
@@ -32,13 +33,13 @@ print' :: Show s => s -> IO ()
 print' = putStr . show
 
 mainPrint :: Return -> IO ()
-mainPrint (E ty v) = do
+mainPrint (Exp ty v) = do
   putStr "-"
   putStr " : "
   print' ty
   putStr " = "
   print v
-mainPrint (D l _ _) = do
+mainPrint (Dec l _ _) = do
   let l' = reverse $ nubBy (\(x,_,_) (y,_,_) -> x==y) $ reverse l
   mapM_ f l'
   where
@@ -50,30 +51,33 @@ mainPrint (D l _ _) = do
       print v
 
 --Ctrl.Monad.CatchIO
-repl :: ValEnv -> TyEnv -> IO ()
-repl valenv tyenv =
-  do putStr "# "
+repl :: Handle -> ValEnv -> TyEnv -> IO ()
+repl handle valenv tyenv =
+  do if handle==stdin then putStr "# " else return ()
      hFlush stdout
-     s <- getLines
+     s <- hGetLines handle
      mret <- runExceptT $ do
        tokens <- ExceptT $ return $ scanTokens s
        cmd    <- ExceptT $ return $ parseCmd tokens
        ret    <- ExceptT $ runTc valenv tyenv $ evalCommand cmd
        return ret
      case mret of
-       Right ret@(D _ valenv tyenv) -> do
+       Right ret@(Exp ty v) -> do
          mainPrint ret
-         repl valenv tyenv
-       Right ret@(E ty v) -> do
+         repl stdin valenv tyenv
+       Right ret@(Dec _ valenv tyenv) -> do
          mainPrint ret
-         repl valenv tyenv
+         repl stdin valenv tyenv
+       Right ret@(Dir "use" [source]) -> do
+         handle <- openFile source ReadMode
+         repl handle emptyValEnv emptyTyEnv
        Left e -> do
          print e
-         repl valenv tyenv
+         repl stdin valenv tyenv
   `catch` \e -> if
      | isEOFError e -> return ()
      | otherwise    -> print (e::IOException) >> main
 
 main :: IO ()
-main = repl emptyValEnv emptyTyEnv
+main = repl stdin emptyValEnv emptyTyEnv
 

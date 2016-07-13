@@ -44,6 +44,7 @@ tokens :-
   \.                              { \s -> TokenDot          }
   \_                              { \s -> TokenWild         }
   \;\;                            { \s -> TokenSemiSemi     }
+  \#                              { \s -> TokenSharp        }
   $digit+                         { \s -> TokenInt (read s) }
   $alpha [$alpha $digit \_ \']*   { \s -> TokenID s         }
 
@@ -85,6 +86,7 @@ data Token = TokenPlus
            | TokenWild
            | TokenListT
            | TokenEOF
+           | TokenSharp
            deriving (Eq,Show)
 
 scanTokens :: String -> Either Error [Token]

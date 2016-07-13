@@ -119,7 +119,7 @@ evalExpr e = case e of
       return $ VCons v1 v2
     EMatch e1 l -> do
       v1 <- evalExpr e1
-      let f [] = error "Impossible"
+      let f [] = fail $ "Pattern match"
           f ((p,e'):l) = case findMatch p v1 of
               Nothing  -> f l
               Just xvs -> extendValEnvList xvs (evalExpr e')
@@ -158,13 +158,13 @@ evalCommand :: Command -> Tc Return
 evalCommand (CExp e) = do
   sigma <- inferExpr e
   v <- evalExpr e
-  return $ E sigma v
+  return $ Exp sigma v
 evalCommand (CDecl l) = do
   let f :: [(Name,Type,Value)] -> [Declare] -> Tc Return
       f l [] = do
         valenv <- getValEnv
         tyenv  <- getTyEnv
-        return $ D l valenv tyenv
+        return $ Dec l valenv tyenv
       f l (dec:decs) = do
         (xs,tys,vs) <- evalDecl dec
         let l' = l ++ zip3 xs tys vs
@@ -172,4 +172,8 @@ evalCommand (CDecl l) = do
           extendValEnvList (zip xs vs) $
             f l' decs
   f [] l
+evalCommand (CDirect "use" source) =
+  return $ Dir "use" source
+
+
 
