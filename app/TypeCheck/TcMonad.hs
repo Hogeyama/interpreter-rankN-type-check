@@ -5,7 +5,7 @@ module TypeCheck.TcMonad (
   Tc(..), catchE,
   -- Environment manipulation
   getValEnv, getTyEnv,
-  runTc, lift, liftEither, check,
+  runTc, lift, check,
   extendTyEnv, extendTyEnvList, lookupVar,
   extendValEnv, extendValEnvList,
   localValEnv,
@@ -71,10 +71,6 @@ unifyErr s = Tc $ \_ -> return $ Left $ Unify s
 
 lift :: IO a -> Tc a
 lift st = Tc $ \_ -> Right <$> st
-
-liftEither :: Either Error a -> Tc a
-liftEither (Right x) = Tc $ \env -> return $ Right x
-liftEither (Left e)  = Tc $ \env -> return $ Left e
 
 check :: Bool -> String -> Tc ()
 check True _ = return ()
@@ -200,10 +196,6 @@ skolemise (Forall tvs ty) = do
 skolemise (Fun arg_ty res_ty) = do
   (sks, res_ty') <- skolemise res_ty
   return (sks, Fun arg_ty res_ty')
--- XXX listとpairに拡張 XXX Listはダメ!!!
---skolemise (TyList ty) = do
---  (sks, ty') <- skolemise ty
---  return (sks, TyList ty')
 skolemise (TyPair ty1 ty2) = do
   (sks1, ty1') <- skolemise ty1
   (sks2, ty2') <- skolemise ty2
@@ -266,6 +258,7 @@ zonkType :: Type -> Tc Type
 zonkType (Forall ns ty) = do
   ty' <- zonkType ty
   return (Forall ns ty')
+
 zonkType (Fun arg res) = do
   arg' <- zonkType arg
   res' <- zonkType res
@@ -312,14 +305,15 @@ unify (Fun arg1 res1) (Fun arg2 res2) = do
 unify TyInt  TyInt  = return ()
 unify TyBool TyBool = return ()
 
-unify sig1@(Forall tvs1 _) (Forall tvs2 ty2) --P55 (2)の方法
-  | length tvs1 == length tvs2 = do
-      (sks1,ty1') <- skolemise sig1
-      let ty2' = substTy tvs2 (map TyVar sks1) ty2
-      unify ty1' ty2'
+--unify sig1@(Forall tvs1 _) (Forall tvs2 ty2) --P55 (2)の方法
+--  | length tvs1 == length tvs2 = do
+--      (sks1,ty1') <- skolemise sig1
+--      let ty2' = substTy tvs2 (map TyVar sks1) ty2
+--      unify ty1' ty2'
 
-unify (TyList ty1) (TyList ty2) =
-  unify ty1 ty2
+--ここでty1,ty2がtauにならねば
+unify (TyList tau1) (TyList tau2) =
+  unify tau1 tau2
 
 unify (TyPair ty11 ty12) (TyPair ty21 ty22) = do
   unify ty11 ty21

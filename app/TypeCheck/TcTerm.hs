@@ -42,6 +42,8 @@ inferRho expr = do
 -- なぜなら(Check rho)で最初に呼び出されるのはEFunAnnot, EAnnotのところのみで
 -- その時点でweak-prenex formに変換されるからである.
 -- EAdd, EEq, EIfなどを追加してもこの性質は保たれる.
+--
+-- これが崩れている. (Check
 tcRho :: Expr -> Expected Rho -> Tc ()
 tcRho (EConstInt _)  exp_ty = instSigma TyInt  exp_ty
 tcRho (EConstBool _) exp_ty = instSigma TyBool exp_ty
@@ -124,12 +126,12 @@ tcRho (EIf e1 e2 e3) exp_ty = do --TODO
 --  writeTcRef ref ty2
 
 tcRho ENil (Check exp_ty) = do
+  check (isTau exp_ty) "Impredicative type is not allowed"
   unifyList exp_ty
   return ()
 tcRho ENil (Infer ref) = do
   ty <- newTyVar
   writeTcRef ref (TyList ty)
-
 tcRho (ECons e1 e2) (Check exp_ty) = do
   ty <- unifyList exp_ty
   checkRho e1 ty
@@ -311,29 +313,53 @@ subsCheck sigma1 sigma2 = do
 -- 呼ばれるのはinstSigmaとsubsCheck内のみで, どちらも
 -- Rho型を渡している.
 subsCheckRho :: Sigma -> Rho -> Tc ()
--- Rule SPEC
-subsCheckRho sigma1@(Forall _ _) rho2 = do
-  rho1 <- instantiate sigma1
-  subsCheckRho rho1 rho2
+subsCheckRho sigma rho = do
+  check (not (isImpredicativeType sigma)
+      && not (isImpredicativeType rho )) "Impredicative type is not allowed"
+  case (sigma,rho) of
+    (Forall{}, rho2) -> do --Rule SPEC
+        rho1 <- instantiate sigma
+        subsCheckRho rho1 rho2
+    (rho1, Fun a2 r2) -> do --Rule FUN
+        (a1,r1) <- unifyFun rho1
+        subsCheckFun a1 r1 a2 r2
+    (Fun a1 r1, rho2) -> do --Rule FUN
+        (a2,r2) <- unifyFun rho2
+        subsCheckFun a1 r1 a2 r2
+    (TyPair a1 b1, rho2) -> do --Rule PAIR
+        (a2,b2) <- unifyPair rho2
+        subsCheckRho a1 a2
+        subsCheckRho b1 b2
+    (rho1, TyPair a2 b2) -> do --Rule PAIR
+        (a1,b1) <- unifyPair rho1
+        subsCheckRho a1 a2
+        subsCheckRho b1 b2
+    (tau1, tau2) -> do
+        unify tau1 tau2
 
--- Rule FUN
-subsCheckRho rho1 (Fun a2 r2) = do
-  (a1,r1) <- unifyFun rho1
-  subsCheckFun a1 r1 a2 r2
-
--- Rule FUN
-subsCheckRho (Fun a1 r1) rho2 = do
-  (a2,r2) <- unifyFun rho2
-  subsCheckFun a1 r1 a2 r2
-
-subsCheckRho (TyPair a1 b1) rho2 = do
-  (a2, b2) <- unifyPair rho2
-  subsCheckRho a1 a2
-  subsCheckRho b1 b2
-
--- Rule MONO
-subsCheckRho tau1 tau2 =
-  unify tau1 tau2
+---- Rule SPEC
+--subsCheckRho sigma1@(Forall _ _) rho2 = do
+--  rho1 <- instantiate sigma1
+--  subsCheckRho rho1 rho2
+--
+---- Rule FUN
+--subsCheckRho rho1 (Fun a2 r2) = do
+--  (a1,r1) <- unifyFun rho1
+--  subsCheckFun a1 r1 a2 r2
+--
+---- Rule FUN
+--subsCheckRho (Fun a1 r1) rho2 = do
+--  (a2,r2) <- unifyFun rho2
+--  subsCheckFun a1 r1 a2 r2
+--
+--subsCheckRho (TyPair a1 b1) rho2 = do
+--  (a2, b2) <- unifyPair rho2
+--  subsCheckRho a1 a2
+--  subsCheckRho b1 b2
+--
+---- Rule MONO
+--subsCheckRho tau1 tau2 = do
+--  unify tau1 tau2
 
 subsCheckFun :: Sigma -> Rho -> Sigma -> Rho -> Tc ()
 subsCheckFun a1 r1 a2 r2 = do
@@ -352,5 +378,31 @@ instSigma t1 (Check t2) = do
 instSigma t1 (Infer r) = do
   t1' <- instantiate t1
   writeTcRef r t1'
+
+isTau :: Type -> Bool
+isTau ty = case ty of
+    Forall [] ty -> isTau ty
+    Forall _ _ -> False
+    TyInt -> True
+    TyBool -> True
+    TyVar _ -> True
+    TyPair ty1 ty2 -> isTau ty1 && isTau ty2
+    TyList ty1 -> isTau ty1
+    MetaTv _ -> True
+
+isImpredicativeType :: Type -> Bool
+isImpredicativeType ty = case ty of
+    TyInt -> False
+    TyBool -> False
+    TyVar _ -> False
+    MetaTv _ -> False
+    Forall _ ty' -> isImpredicativeType ty'
+    Fun ty1 ty2 -> isImpredicativeType ty1
+                || isImpredicativeType ty2
+    TyPair ty1 ty2 -> isImpredicativeType ty1
+                   || isImpredicativeType ty2
+    TyList ty' -> not $ isTau ty'
+
+
 
 
